@@ -1,0 +1,34 @@
+
+#cmakedefine enabledVar // some comment
+#	cmakedefine enabledTabedVar
+#  cmakedefine enabledSpacedVar
+#cmakedefine disabledVar
+#	cmakedefine disabledTabedVar
+#  cmakedefine disabledSpacedVar
+
+#cmakedefine enabledStringVar defineString
+#	cmakedefine enabledTabedStringVar defineTabedString
+#cmakedefine disabledStringVar notDefineString
+#	cmakedefine disabledTabedStringVar notDefineTabedString
+
+#cmakedefine01 enabled01
+#	cmakedefine01 enabledTabed01
+#cmakedefine01 disabled01
+#	cmakedefine01 disabledTabed01
+
+#if(@AtVarEnabled@)
+	#define AtVarEnabledWasEnabled
+#endif
+
+#if(${DollarVarEnabled})
+	#define DollarVarEnabledWasEnabled
+#endif
+
+#if($CACHE{CacheVarEnabled})
+	#define CacheVarEnabledWasEnabled
+#endif
+
+// TODO
+// #if($ENV{EnvVarEnabled})
+// 	#define EnvVarEnabledWasEnabled
+// #endif

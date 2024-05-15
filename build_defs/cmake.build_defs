@@ -1,0 +1,162 @@
+"""
+A set of rules for cmake related files.
+Please note, that these rules do not intend to implement cmake based build processes.
+Instead, these rules exist to be able to replace cmake with please in builds.
+"""
+
+def _partitionWord(self:str, sep:str = " 	") -> list:
+    """
+    Partitions out the first word, separated by the the given separator characters.
+    That is to say, it returns a tuple of (Any leading separators, The first string of non separator characters, Any trailing separators and the rest of the string)
+    """
+
+    # Strip leading separators.
+    word = self.lstrip(sep)
+
+    # Get the shortest partition of the word (i.e. the index of the first occurenc of a character in sep)
+    shortestPartition = len(word)
+    for sepChar in sep.split(""):
+        prefix, separator, suffix = word.partition(sepChar)
+
+        # Update shortest partion, if this one is shorter.
+        if(shortestPartition > len(prefix)):
+            shortestPartition = len(prefix)
+    
+    # Return tuple of the results.
+    wordPrefix = self[0:len(self) - len(word)]
+    wordSuffix = word[shortestPartition:]
+    word = word[:shortestPartition]
+
+    return(wordPrefix, word, wordSuffix)
+
+def _replace_vars(self:str, startSeparator:str, endSeparator:str, variables:dict) -> str:
+    """
+    Replaces variables identified by the given start and end separators in the given string.
+    """
+
+    # Find start separator.
+    startIndex = self.find(startSeparator)
+    if(startIndex < 0):
+        # Start separator not found, return string as is.
+        return(self)
+
+    # Start separator found, find end separator.
+    variableStartIndex = startIndex + len(startSeparator)
+    varLength = self[variableStartIndex:].find(endSeparator)
+    if(varLength < 0):
+        # End separator not found, return string as is
+        return(self)
+    
+    # End separator found, replace with substring.
+    variableString = self[variableStartIndex: variableStartIndex + varLength]
+
+    prefixString = self[0:startIndex]
+    suffixString = self[variableStartIndex + varLength + len(endSeparator):]
+
+    if(len(suffixString) > 0):
+        # Suffix is non-zero, recusively call to replace any other variables in the string.
+        return(prefixString + variables.get(variableString, "") + _replace_vars(suffixString, startSeparator, endSeparator, variables))
+    
+    return(prefixString + variables.get(variableString, ""))
+
+
+def _configure_file_post_func(variables:dict, out:str, atOnly:bool = False):
+    """
+    Function that returns the post-build function used for cmake_configure_file to actually handle the string replacements and output generation.
+    """
+    def _configure_file_post(ruleName, cmdOutput):
+
+        resList = []
+        for line in cmdOutput:
+            # Replace variable strings first.
+            line = _replace_vars(line, "@", "@", variables)
+
+            # Replace non @ variables if enabled.
+            if(atOnly == False):
+                line = _replace_vars(line, "${", "}", variables)
+                line = _replace_vars(line, "$CACHE{", "}", variables)
+                # TODO: Environment variables.
+            
+            # Skip empty lines by adding them to the list and continuing.
+            if(len(line) == 0):
+                resList += [""]
+                continue
+                
+            if(line[0] == "#"):
+                # Prepocessor directive.
+
+                # partition out the keyword.
+                prefixSeparator, keyword, keywordSuffix = _partitionWord(line[1:])
+
+                # Check if cmakedefine keyword
+                if(keyword == "cmakedefine"):
+                    # Partition variable name.
+                    variablePrefix, variable, variableSuffix = _partitionWord(keywordSuffix)
+
+                    # Generate replacement string, depending on if the variable was defined or not.
+                    if(variable in variables.keys()):
+                        # Variable defined, replace the cmakedefine string with define and add to list.
+                        replaceString = "#" + prefixSeparator + "define" + keywordSuffix
+                        resList += [replaceString]
+                        continue
+                    else:
+                        # Variable not defined, replace the cmakedefine string with undef, comment out and add to list.
+                        replaceString = "/*#" + prefixSeparator + "undef" + keywordSuffix + "*/"
+                        resList += [replaceString]
+                        continue
+
+                # Check if cmakedefine01 keyword.
+                if(keyword == "cmakedefine01"):
+                    # Partition variable name.
+                    variablePrefix, variable, variableSuffix = _partitionWord(keywordSuffix)
+                    
+                    # Generate the replacement string without a 0 or 1.
+                    replaceString = "#" + prefixSeparator + "define" + keywordSuffix
+
+                    # Add a 1 or a 0 depending on if the variable was defined.
+                    # Note that this means that if there is anything after the variable, the 1 or 0 will be added after that, as per the cmake documentation.
+                    if(variable in variables.keys()):
+                        replaceString += " 1"
+                    else:
+                        replaceString += " 0"
+                    resList += [replaceString]
+                    continue
+
+            # No preprocessor match, add verbaitim.
+            resList += [line]
+
+        # Create file from result text and add it as a dependency to this rule to output it.
+        fileRule = text_file(name = "_" + ruleName + "#out", content = "\n".join(resList), out=out)
+        add_exported_dep(ruleName, fileRule)
+
+    return(_configure_file_post)
+
+def cmake_configure_file(name: str, src:str, out:str, escapeQuotes: bool = False, atOnly:bool = False, variables:dict = {}, visibility:list = [], deps:list = [], test_only:bool = False):
+    """
+    Configures the given file, as cmakes configure_file() would do.
+      Args:
+        name (str): Name of this rule.
+        src (str): The source file to parse.
+        out (str): The output for the generated file.
+        escapeQuotes (bool): If true, escapes substituted quotes with c-stype backslashes. TODO
+        atOnly (bool): If true, only replaces variables in the form of @VAR@.
+        variables (dict): A dictionary of variables to substitute or enable in the source.
+        deps (list): Dependent rules.
+        test_only (bool): True if this rule should only be used for tests. Defaults to False.
+        visibility (bool): list of rules that should have visibility to this rule. Defaults to None.
+    """
+    # The rule itself only prints the source file to the console. All the logic and final output file is handled by _configure_file_post.
+    # If you are wondering why this rule leverages post build functions so heavily, when most of this could be done e.g. in python with a couple of lines,
+    # the reason is simply to make sure the rule didn't have external tool dependencies, which could be configured unexpectedly by the root.
+    # This way, it doesn't matter how a project configures its tools and compiler arguments as this rules is entirely self contained within the please language.
+    # That said, it would be nice to have some regex functionality in please, as may be obvious from the post build function implementation.
+    return(build_rule(
+        name=name,
+        cmd="cat $SRC",
+        srcs=[src],
+        post_build=_configure_file_post_func(variables=variables, out=out, atOnly=atOnly),
+        visibility = visibility,
+        building_description = "Configuring file...",
+        deps = deps,
+        test_only = test_only
+    ))
