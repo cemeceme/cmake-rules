@@ -60,7 +60,7 @@ def _replace_vars(self:str, startSeparator:str, endSeparator:str, variables:dict
     return(prefixString + variables.get(variableString, ""))
 
 
-def _configure_file_post_func(variables:dict, out:str, atOnly:bool = False):
+def _configure_file_post_func(variables:dict, out:str, atOnly:bool = False, escapeQuotes:bool = False):
     """
     Function that returns the post-build function used for cmake_configure_file to actually handle the string replacements and output generation.
     """
@@ -126,7 +126,7 @@ def _configure_file_post_func(variables:dict, out:str, atOnly:bool = False):
             resList += [line]
 
         # Create file from result text and add it as a dependency to this rule to output it.
-        fileRule = text_file(name = "_" + ruleName + "#out", content = "\n".join(resList), out=out)
+        fileRule = text_file(name = tag(ruleName,"out"), content = "\n".join(resList), out=out)
         add_exported_dep(ruleName, fileRule)
 
     return(_configure_file_post)
@@ -138,25 +138,34 @@ def cmake_configure_file(name: str, src:str, out:str, escapeQuotes: bool = False
         name (str): Name of this rule.
         src (str): The source file to parse.
         out (str): The output for the generated file.
-        escapeQuotes (bool): If true, escapes substituted quotes with c-stype backslashes. TODO
-        atOnly (bool): If true, only replaces variables in the form of @VAR@.
+        escapeQuotes (bool): If true, escapes substituted quotes with c-stype backslashes. Defaults to False. TODO
+        atOnly (bool): If true, only replaces variables in the form of @VAR@. Defaults to False.
         variables (dict): A dictionary of variables to substitute or enable in the source.
         deps (list): Dependent rules.
         test_only (bool): True if this rule should only be used for tests. Defaults to False.
-        visibility (bool): list of rules that should have visibility to this rule. Defaults to None.
+        visibility (list): list of rules that should have visibility to this rule. Defaults to None.
     """
     # The rule itself only prints the source file to the console. All the logic and final output file is handled by _configure_file_post.
     # If you are wondering why this rule leverages post build functions so heavily, when most of this could be done e.g. in python with a couple of lines,
     # the reason is simply to make sure the rule didn't have external tool dependencies, which could be configured unexpectedly by the root.
     # This way, it doesn't matter how a project configures its tools and compiler arguments as this rules is entirely self contained within the please language.
     # That said, it would be nice to have some regex functionality in please, as may be obvious from the post build function implementation.
-    return(build_rule(
-        name=name,
+    outRule = build_rule(
+        name= tag(name, "fileRead"),
         cmd="cat $SRC",
         srcs=[src],
-        post_build=_configure_file_post_func(variables=variables, out=out, atOnly=atOnly),
+        post_build=_configure_file_post_func(variables=variables,out=out, atOnly=atOnly, escapeQuotes=escapeQuotes),
         visibility = visibility,
         building_description = "Configuring file...",
         deps = deps,
         test_only = test_only
+    )
+
+    # Return a shim rule, that has a sleep and check command, to make sure the post_build rule of the actual command runs properly. This is a workaround for the bug https://github.com/thought-machine/please/issues/3168.
+    return(build_rule(
+        name=name,
+        cmd="sleep 1 && if [ -e " + join_path(package_name(), out) + " ]; then touch $OUT; fi",
+        outs=["nop"],
+        building_description = "Waiting for workaround...",
+        exported_deps = [outRule]
     ))

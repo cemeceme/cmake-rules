@@ -24,10 +24,10 @@ Takes the following arguments:
 name         (str) : Name of this rule.
 src          (str) : The source file to parse.
 out          (str) : The output for the generated file.
-escapeQuotes (bool): If true, escapes substituted quotes with c-stype backslashes. TODO
-atOnly       (bool): If true, only replaces variables in the form of @VAR@.
+escapeQuotes (bool): If true, escapes substituted quotes with c-stype backslashes. Defaults to False. TODO
+atOnly       (bool): If true, only replaces variables in the form of @VAR@. Defaults to False.
 variables    (dict): A dictionary of variables to substitute or enable in the source.
 deps         (list): Dependent rules.
 test_only    (bool): True if this rule should only be used for tests. Defaults to False.
-visibility   (bool): list of rules that should have visibility to this rule. Defaults to None.
+visibility   (list): list of rules that should have visibility to this rule. Defaults to None.
 ```
