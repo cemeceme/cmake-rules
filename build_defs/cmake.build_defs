@@ -164,7 +164,7 @@ def cmake_configure_file(name: str, src:str, out:str, escapeQuotes: bool = False
     # Return a shim rule, that has a sleep and check command, to make sure the post_build rule of the actual command runs properly. This is a workaround for the bug https://github.com/thought-machine/please/issues/3168.
     return(build_rule(
         name=name,
-        cmd="sleep 1 && if [ -e " + join_path(package_name(), out) + " ]; then touch $OUT; fi",
+        cmd="sleep 10 && if [ -e " + join_path(package_name(), out) + " ]; then touch $OUT; fi",
         outs=["nop"],
         building_description = "Waiting for workaround...",
         exported_deps = [outRule]
