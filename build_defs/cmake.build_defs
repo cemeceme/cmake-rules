@@ -150,8 +150,8 @@ def cmake_configure_file(name: str, src:str, out:str, escapeQuotes: bool = False
     # the reason is simply to make sure the rule didn't have external tool dependencies, which could be configured unexpectedly by the root.
     # This way, it doesn't matter how a project configures its tools and compiler arguments as this rules is entirely self contained within the please language.
     # That said, it would be nice to have some regex functionality in please, as may be obvious from the post build function implementation.
-    outRule = build_rule(
-        name= tag(name, "fileRead"),
+    return(build_rule(
+        name= name,
         cmd="cat $SRC",
         srcs=[src],
         post_build=_configure_file_post_func(variables=variables,out=out, atOnly=atOnly, escapeQuotes=escapeQuotes),
@@ -159,13 +159,4 @@ def cmake_configure_file(name: str, src:str, out:str, escapeQuotes: bool = False
         building_description = "Configuring file...",
         deps = deps,
         test_only = test_only
-    )
-
-    # Return a shim rule, that has a sleep and check command, to make sure the post_build rule of the actual command runs properly. This is a workaround for the bug https://github.com/thought-machine/please/issues/3168.
-    return(build_rule(
-        name=name,
-        cmd="sleep 10 && if [ -e " + join_path(package_name(), out) + " ]; then touch $OUT; fi",
-        outs=["nop"],
-        building_description = "Waiting for workaround...",
-        exported_deps = [outRule]
     ))
